@@ -44,12 +44,18 @@
             background-color: #f9fafb; /* bg-gray-50 */
         }
         .table-container {
-             max-height: calc(100vh - 250px);
+             max-height: calc(100vh - 300px); /* Reverted to original height */
              overflow: auto; /* Changed from overflow-y to auto to allow horizontal scrolling on small screens */
         }
         #assignmentTooltip {
             position: fixed;
             pointer-events: none;
+        }
+         .modal {
+            transition: opacity 0.25s ease;
+        }
+        .modal-content {
+            transition: transform 0.25s ease;
         }
     </style>
 </head>
@@ -64,9 +70,14 @@
                     <h1 id="mainTitle" class="text-2xl sm:text-3xl font-bold text-gray-800">ระบบติดตามงาน</h1>
                     <p id="subTitle" class="text-gray-500"></p>
                 </div>
-                <button id="backButton" class="hidden bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors">
-                    <i class="fas fa-chevron-left mr-2"></i> กลับ
-                </button>
+                <div>
+                    <button id="settingsButton" class="text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100">
+                        <i class="fas fa-cog fa-lg"></i>
+                    </button>
+                    <button id="backButton" class="hidden bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg transition-colors">
+                        <i class="fas fa-chevron-left mr-2"></i> กลับ
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -79,6 +90,14 @@
 
         <!-- View for Student Summary in a Class -->
         <div id="student-summary-view" class="view-container">
+            <div class="mb-4">
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-search text-gray-400"></i>
+                    </div>
+                    <input type="text" id="studentSearchInput" class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="ค้นหาชื่อนักเรียน...">
+                </div>
+            </div>
             <div class="table-container bg-white rounded-xl shadow-sm">
                 <table id="studentSummaryTable" class="w-full text-sm text-left text-gray-600">
                     <thead class="text-xs text-gray-700 uppercase bg-gray-50">
@@ -114,471 +133,36 @@
     <!-- Tooltip Element -->
     <div id="assignmentTooltip" class="hidden bg-gray-800 text-white text-sm rounded-lg px-3 py-1.5 shadow-lg z-50"></div>
 
-<script type="module">
-    // --- Firebase SDK Imports ---
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    <!-- Password Modal -->
+    <div id="passwordModal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-50">
+        <div class="modal-content bg-white rounded-lg shadow-xl w-full max-w-sm p-6 transform -translate-y-10">
+            <h3 id="passwordModalTitle" class="text-xl font-bold mb-4">กรุณากรอกรหัสผ่าน</h3>
+            <input type="password" id="passwordInput" class="w-full border-gray-300 rounded-lg p-2 shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+            <p id="passwordError" class="text-red-500 text-sm mt-2 hidden">รหัสผ่านไม่ถูกต้อง</p>
+            <div class="mt-6 flex justify-end gap-3">
+                <button id="passwordCancelBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">ยกเลิก</button>
+                <button id="passwordConfirmBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">ยืนยัน</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden opacity-0 z-50">
+        <div class="modal-content bg-white rounded-lg shadow-xl w-full max-w-2xl p-6 transform -translate-y-10">
+            <div class="flex justify-between items-center mb-4">
+                 <div id="settingsModalHeader" class="flex items-center gap-4">
+                    <h3 class="text-xl font-bold">ตั้งค่าห้องเรียน</h3>
+                    <!-- Lock All Button will be inserted here by JS -->
+                </div>
+                <button id="settingsCloseBtn" class="text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+            <div id="classSettingsContainer" class="max-h-[60vh] overflow-y-auto space-y-3 pr-2">
+                <!-- Class password settings will be rendered here -->
+            </div>
+        </div>
+    </div>
 
-    document.addEventListener('DOMContentLoaded', async () => {
-        // --- Firebase Configuration ---
-        const firebaseConfig = {
-            apiKey: "AIzaSyB_DjUyANiQMWnFSG7d71R_ANviYbrUMM8",
-            authDomain: "grading-system-a666b.firebaseapp.com",
-            projectId: "grading-system-a666b",
-            storageBucket: "grading-system-a666b.appspot.com",
-            messagingSenderId: "1008723501468",
-            appId: "1:1008723501468:web:d9736312e4f1da107ca859",
-            measurementId: "G-JSHX5M64R0"
-        };
-
-        // --- Firebase Initialization ---
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        await signInAnonymously(auth);
-        
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-public-gradebook-v2';
-        const gradebookDocRef = doc(db, "artifacts", appId, "public", "data", "gradebook", "main");
-
-        // --- CONFIGURATION ---
-        const GRADE_MULTIPLIER = { 'A': 1.0, 'B': 0.9, 'C': 0.9, 'D': 0.8, 'none': 0 };
-
-        // --- DOM ELEMENTS ---
-        const mainTitle = document.getElementById('mainTitle');
-        const subTitle = document.getElementById('subTitle');
-        const backButton = document.getElementById('backButton');
-        const views = {
-            classSelection: document.getElementById('class-selection-view'),
-            studentSummary: document.getElementById('student-summary-view'),
-            studentDetail: document.getElementById('student-detail-view'),
-        };
-        const classButtonsContainer = document.getElementById('class-buttons-container');
-        const studentSummaryBody = document.getElementById('studentSummaryBody');
-        const studentDetailTable = document.getElementById('studentDetailTable');
-        const studentDetailBody = document.getElementById('studentDetailBody');
-        const assignmentTooltip = document.getElementById('assignmentTooltip');
-
-        // --- APP STATE ---
-        let fullState = {};
-        let currentView = 'classSelection'; // classSelection, studentSummary, studentDetail
-        let selectedClassId = null;
-        let selectedStudentId = null;
-
-        const setupFirestoreListener = () => {
-            onSnapshot(gradebookDocRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    fullState = docSnap.data();
-                    render(); 
-                } else {
-                    console.log("No document found!");
-                    classButtonsContainer.innerHTML = '<p class="col-span-full text-center text-gray-500">ไม่พบข้อมูล กรุณาตั้งค่าในแอปหลักก่อน</p>';
-                }
-            }, (error) => {
-                console.error("Error listening to Firestore:", error);
-            });
-        };
-        
-        // --- DATA ACCESS HELPERS ---
-        const getCurrentAcademicYearData = () => fullState.academicYears ? fullState.academicYears.find(y => y.year === fullState.currentAcademicYear) : null;
-        const getCurrentSemesterData = () => {
-            const yearData = getCurrentAcademicYearData();
-            return yearData ? yearData.semesters.find(s => s.id === fullState.currentSemesterId) : null;
-        };
-        const getClassData = (classId) => {
-            const semesterData = getCurrentSemesterData();
-            return semesterData ? semesterData.classData[classId] : null;
-        };
-
-        // --- CORE LOGIC & CALCULATIONS ---
-        const calculateGpa = (score) => {
-            if (score >= 80) return 4.0; if (score >= 75) return 3.5; if (score >= 70) return 3.0;
-            if (score >= 65) return 2.5; if (score >= 60) return 2.0; if (score >= 55) return 1.5;
-            if (score >= 50) return 1.0; return 0.0;
-        };
-
-        const calculateScores = (studentId, classData) => {
-            if (!classData) return { totalScore: 0, gpa: '0.0' };
-            
-            const assignments = classData.assignments || [];
-            const studentExams = classData.examScores?.[studentId] || {};
-            
-            let totalAssignmentPoints = 0;
-            const totalWeight = assignments.reduce((sum, a) => sum + (a?.weight || 1), 0);
-
-            if (totalWeight > 0) {
-                let studentWeightedScore = assignments.reduce((sum, a) => {
-                    if (!a || !a.id) return sum; 
-                    const gradeKey = `${studentId}-${a.id}`;
-                    const progressScore = classData.progressScores?.[gradeKey];
-                    
-                    if (progressScore !== undefined && progressScore !== null && progressScore !== '') {
-                        return sum + (1.0 * (a.weight || 1));
-                    }
-                    return sum + (GRADE_MULTIPLIER[classData.grades?.[gradeKey] || 'none'] * (a.weight || 1));
-                }, 0);
-                totalAssignmentPoints = (studentWeightedScore / totalWeight) * (classData.scoreConfig?.assignment || 50);
-            }
-
-            const roundedAssignmentScore = Math.ceil(totalAssignmentPoints);
-
-            const specialColumns = classData.specialColumns || [];
-            const totalSpecialPoints = specialColumns.reduce((sum, col) => {
-                if (!col || !col.id) return sum;
-                return sum + (classData.specialScores?.[`${studentId}-${col.id}`] || 0)
-            }, 0);
-            
-            const checklistPoints = ['notebook', 'textbook', 'workbook'].reduce((sum, item) => {
-                return sum + (classData.checklistStatus?.[`${studentId}-${item}`] ? 1 : 0);
-            }, 0);
-
-            const totalScore = roundedAssignmentScore + 
-                               (studentExams.midterm || 0) + 
-                               (studentExams.final || 0) + 
-                               (studentExams.midYear || 0) + 
-                               (studentExams.yearEnd || 0) + 
-                               (studentExams.special || 0) + 
-                               totalSpecialPoints + 
-                               checklistPoints;
-                               
-            const gpa = calculateGpa(totalScore > 100 ? 100 : totalScore);
-            return { totalScore: parseFloat(totalScore.toFixed(2)), gpa: gpa.toFixed(1) };
-        };
-
-        // --- NAVIGATION & VIEW MANAGEMENT ---
-        const switchView = (viewName) => {
-            currentView = viewName;
-            Object.values(views).forEach(v => v.classList.remove('active'));
-            if (views[viewName]) {
-                views[viewName].classList.add('active');
-            }
-            render();
-        };
-
-        backButton.addEventListener('click', () => {
-            if (currentView === 'studentDetail') {
-                switchView('studentSummary');
-            } else if (currentView === 'studentSummary') {
-                selectedClassId = null;
-                switchView('classSelection');
-            }
-        });
-
-
-        // --- MAIN RENDERING LOGIC ---
-        const render = () => {
-            try {
-                const semesterData = getCurrentSemesterData();
-                if (!semesterData) {
-                    subTitle.textContent = "กรุณาเลือกปีการศึกษาและภาคเรียนในแอปหลัก";
-                    return;
-                }
-
-                backButton.classList.toggle('hidden', currentView === 'classSelection');
-
-                if (currentView === 'classSelection') {
-                    subTitle.textContent = `กรุณาเลือกห้องเรียน | ${semesterData.name}`;
-                    renderClassSelection(semesterData);
-                } else if (currentView === 'studentSummary' && selectedClassId) {
-                    const classData = getClassData(selectedClassId);
-                    const className = semesterData.classes.find(c => c.id === selectedClassId)?.name || '';
-                    subTitle.textContent = `สรุปผลห้อง ${className}`;
-                    renderStudentSummary(classData);
-                } else if (currentView === 'studentDetail' && selectedClassId && selectedStudentId) {
-                    const classData = getClassData(selectedClassId);
-                    const studentName = classData.students.find(s => s.id === selectedStudentId)?.name || '';
-                    subTitle.textContent = `รายละเอียดงานของ: ${studentName}`;
-                    renderStudentDetail(classData);
-                }
-            } catch (error) {
-                console.error("An error occurred during render:", error);
-                subTitle.textContent = "เกิดข้อผิดพลาดในการแสดงผลข้อมูล";
-            }
-        };
-
-        const renderClassSelection = (semesterData) => {
-            classButtonsContainer.innerHTML = '';
-            if (!semesterData.classes || semesterData.classes.length === 0) {
-                 classButtonsContainer.innerHTML = '<p class="col-span-full text-center text-gray-500">ไม่พบห้องเรียนในภาคเรียนนี้</p>';
-                 return;
-            }
-            semesterData.classes.forEach(cls => {
-                if (!cls || !cls.id) return;
-                const button = document.createElement('button');
-                button.className = 'class-button bg-white p-6 rounded-xl shadow-md text-center';
-                button.innerHTML = `
-                    <div class="text-4xl mb-3"><i class="fas fa-chalkboard-teacher text-indigo-500"></i></div>
-                    <h3 class="text-xl font-semibold text-gray-700">${cls.name || 'ไม่มีชื่อ'}</h3>
-                `;
-                button.addEventListener('click', () => {
-                    selectedClassId = cls.id;
-                    switchView('studentSummary');
-                });
-                classButtonsContainer.appendChild(button);
-            });
-        };
-
-        const renderStudentSummary = (classData) => {
-            studentSummaryBody.innerHTML = '';
-            if (!classData || !Array.isArray(classData.students) || classData.students.length === 0) {
-                 studentSummaryBody.innerHTML = '<tr><td colspan="4" class="text-center p-8 text-gray-500">ไม่พบข้อมูลนักเรียน</td></tr>';
-                 return;
-            }
-
-            const diagnosticRow = document.createElement('tr');
-            diagnosticRow.innerHTML = `<td colspan="4" class="p-3 text-center bg-blue-100 text-blue-800 font-semibold">พบข้อมูลนักเรียนทั้งหมด ${classData.students.length} คน</td>`;
-            studentSummaryBody.appendChild(diagnosticRow);
-
-            let studentIndex = 0;
-            for (const student of classData.students) {
-                try {
-                    if (!student || typeof student.id === 'undefined') {
-                        console.warn("Skipping invalid student data:", student);
-                        continue;
-                    }
-                    const scores = calculateScores(student.id, classData);
-                    const isFailing = scores.totalScore < 50;
-                    const gpaIsZero = scores.gpa === '0.0';
-                    const row = document.createElement('tr');
-                    row.className = `border-b hover:bg-gray-100 cursor-pointer ${isFailing ? 'failing-student-row' : ''}`;
-                    row.innerHTML = `
-                        <td class="px-4 py-3 text-center font-medium">${studentIndex + 1}</td>
-                        <td class="px-6 py-3 font-semibold text-gray-900">${student.name || 'ไม่มีชื่อ'}</td>
-                        <td class="px-6 py-3 text-center text-lg font-bold ${isFailing ? 'text-red-600' : 'text-green-600'}">${scores.totalScore}</td>
-                        <td class="px-6 py-3 text-center text-lg font-bold ${gpaIsZero ? 'text-red-600' : 'text-purple-600'}">${scores.gpa}</td>
-                    `;
-                    row.addEventListener('click', () => {
-                        selectedStudentId = student.id;
-                        switchView('studentDetail');
-                    });
-                    studentSummaryBody.appendChild(row);
-                } catch (error) {
-                    console.error(`Failed to render student: ${student?.name || 'Unknown'}`, error);
-                    const errorRow = document.createElement('tr');
-                    errorRow.className = 'border-b bg-red-200';
-                    errorRow.innerHTML = `
-                        <td class="px-4 py-3 text-center font-medium">${studentIndex + 1}</td>
-                        <td class="px-6 py-3 font-semibold text-red-800">${student?.name || 'นักเรียนที่ไม่มีชื่อ'}</td>
-                        <td colspan="2" class="px-6 py-3 text-red-800">เกิดข้อผิดพลาดในการแสดงผลข้อมูลของนักเรียนคนนี้</td>
-                    `;
-                    studentSummaryBody.appendChild(errorRow);
-                } finally {
-                    studentIndex++;
-                }
-            }
-        };
-
-        // --- Tooltip Functions ---
-        const showAssignmentTooltip = (e) => {
-            const cell = e.currentTarget;
-            assignmentTooltip.innerHTML = cell.dataset.details;
-            assignmentTooltip.classList.remove('hidden');
-        };
-
-        const hideAssignmentTooltip = () => {
-            assignmentTooltip.classList.add('hidden');
-        };
-
-        const moveAssignmentTooltip = (e) => {
-            const tooltipWidth = assignmentTooltip.offsetWidth;
-            const tooltipHeight = assignmentTooltip.offsetHeight;
-            let left = e.pageX + 15;
-            let top = e.pageY + 15;
-
-            if (left + tooltipWidth > window.innerWidth) {
-                left = e.pageX - tooltipWidth - 15;
-            }
-            if (top + tooltipHeight > window.innerHeight) {
-                top = e.pageY - tooltipHeight - 15;
-            }
-
-            assignmentTooltip.style.left = `${left}px`;
-            assignmentTooltip.style.top = `${top}px`;
-        };
-        
-        const renderStudentDetail = (classData) => {
-            studentDetailBody.innerHTML = '';
-            studentDetailTable.querySelector('thead').innerHTML = ''; // Clear header
-            let hasContent = false;
-
-            // --- Render Overall Score Summary ---
-            const scores = calculateScores(selectedStudentId, classData);
-            const summaryHeaderRow = document.createElement('tr');
-            summaryHeaderRow.className = 'border-b';
-            const totalScoreColor = scores.totalScore < 50 ? 'text-red-600' : 'text-green-600';
-            const gpaIsZero = scores.gpa === '0.0';
-            const gpaColor = gpaIsZero ? 'text-red-600' : 'text-purple-600';
-            summaryHeaderRow.innerHTML = `
-                <td colspan="3" class="p-0">
-                    <div class="grid grid-cols-2 gap-px bg-gray-200">
-                        <div class="bg-white p-4 text-center">
-                            <p class="text-sm font-semibold text-gray-600">คะแนนรวม</p>
-                            <p class="text-3xl font-bold ${totalScoreColor}">${scores.totalScore}</p>
-                        </div>
-                        <div class="bg-white p-4 text-center">
-                            <p class="text-sm font-semibold text-gray-600">ผลการเรียน</p>
-                            <p class="text-3xl font-bold ${gpaColor}">${scores.gpa}</p>
-                        </div>
-                    </div>
-                </td>
-            `;
-            studentDetailBody.appendChild(summaryHeaderRow);
-            const separatorRow = document.createElement('tr');
-            separatorRow.innerHTML = `<td colspan="3" class="py-2 bg-gray-100"></td>`;
-            studentDetailBody.appendChild(separatorRow);
-
-
-            // --- Render Exam and other scores FIRST ---
-            const studentExams = classData.examScores?.[selectedStudentId] || {};
-            const examTypes = { midterm: 'คะแนนสอบกลางภาค', final: 'คะแนนสอบปลายภาค', midYear: 'คะแนนสอบกลางปี', yearEnd: 'คะแนนสอบปลายปี', special: 'คะแนนพิเศษ (การสอบ)' };
-
-            Object.entries(examTypes).forEach(([key, label]) => {
-                const score = studentExams[key];
-                if (score !== undefined && score !== null && score !== 0) {
-                    hasContent = true;
-                    const row = document.createElement('tr');
-                    row.className = 'border-b bg-gray-50';
-                    row.innerHTML = `
-                        <td class="px-4 py-3 text-center font-semibold text-gray-700"><i class="fas fa-file-alt"></i></td>
-                        <td class="px-6 py-3 font-semibold text-gray-700">${label}</td>
-                        <td class="px-6 py-3 text-center">
-                            <span class="px-3 py-1 text-sm font-bold rounded-full bg-indigo-100 text-indigo-800">${score}</span>
-                        </td>`;
-                    studentDetailBody.appendChild(row);
-                }
-            });
-            
-            const specialColumns = classData.specialColumns || [];
-            specialColumns.forEach(col => {
-                if (!col || !col.id) return;
-                const score = classData.specialScores?.[`${selectedStudentId}-${col.id}`];
-                if (score !== undefined && score !== null && score !== 0) {
-                    hasContent = true;
-                    const row = document.createElement('tr');
-                    row.className = 'border-b bg-gray-50';
-                    row.innerHTML = `
-                        <td class="px-4 py-3 text-center font-semibold text-gray-700"><i class="fas fa-star"></i></td>
-                        <td class="px-6 py-3 font-semibold text-gray-700">${col.name || 'คะแนนพิเศษ'}</td>
-                        <td class="px-6 py-3 text-center">
-                            <span class="px-3 py-1 text-sm font-bold rounded-full bg-purple-100 text-purple-800">${score}</span>
-                        </td>`;
-                    studentDetailBody.appendChild(row);
-                }
-            });
-
-            const checklistItems = { notebook: 'คะแนนสมุด', textbook: 'คะแนนหนังสือ', workbook: 'คะแนนแบบฝึกหัด' };
-            Object.entries(checklistItems).forEach(([key, label]) => {
-                const hasItem = classData.checklistStatus?.[`${selectedStudentId}-${key}`];
-                if (hasItem) {
-                    hasContent = true;
-                    const row = document.createElement('tr');
-                    row.className = 'border-b bg-gray-50';
-                    row.innerHTML = `
-                        <td class="px-4 py-3 text-center font-semibold text-gray-700"><i class="fas fa-check-circle"></i></td>
-                        <td class="px-6 py-3 font-semibold text-gray-700">${label}</td>
-                        <td class="px-6 py-3 text-center">
-                            <span class="px-3 py-1 text-sm font-bold rounded-full bg-green-100 text-green-800">1</span>
-                        </td>`;
-                    studentDetailBody.appendChild(row);
-                }
-            });
-
-            // --- Separate Assignments ---
-            const completedAssignments = [];
-            const pendingAssignments = [];
-
-            (classData.assignments || []).forEach(assignment => {
-                if (!assignment || typeof assignment.id === 'undefined') return;
-                const gradeKey = `${selectedStudentId}-${assignment.id}`;
-                const progressScore = classData.progressScores ? classData.progressScores[gradeKey] : undefined;
-                const grade = classData.grades[gradeKey] || 'none';
-                const isSubmitted = (grade !== 'none') || (progressScore !== undefined && progressScore !== null && progressScore !== '');
-                
-                if (isSubmitted) {
-                    completedAssignments.push(assignment);
-                } else {
-                    pendingAssignments.push(assignment);
-                }
-            });
-
-            // --- Render Completed Assignments ---
-            if (completedAssignments.length > 0) {
-                hasContent = true;
-                const headerRow = document.createElement('tr');
-                headerRow.className = "bg-green-50 border-y";
-                headerRow.innerHTML = `<th colspan="3" class="px-6 py-2 text-left text-green-800 font-semibold"><i class="fas fa-check-circle mr-2"></i>งานที่ส่งแล้ว (${completedAssignments.length} ชิ้น)</th>`;
-                studentDetailBody.appendChild(headerRow);
-                
-                completedAssignments.forEach((assignment) => {
-                     const originalIndex = classData.assignments.findIndex(a => a.id === assignment.id);
-                     const gradeKey = `${selectedStudentId}-${assignment.id}`;
-                     const progressScore = classData.progressScores ? classData.progressScores[gradeKey] : undefined;
-                     const grade = classData.grades[gradeKey] || 'none';
-                     let statusText, statusClass;
-                     if (progressScore !== undefined && progressScore !== null && progressScore !== '') {
-                         statusText = progressScore; statusClass = 'status-progress';
-                     } else {
-                         statusText = grade === 'none' ? '-' : grade; statusClass = `status-${grade}`;
-                     }
-                     const row = document.createElement('tr');
-                     row.className = 'border-b';
-                     row.innerHTML = `
-                        <td class="px-4 py-3 text-center text-gray-500">${originalIndex + 1}</td>
-                        <td class="px-6 py-3 assignment-name-cell" data-details="จำนวน: ${assignment.quantity || '-'} | หน้า: ${assignment.page || '-'} <br> มอบหมาย: ${assignment.assignedDate || '-'}">
-                           <i class="fas fa-book-open text-gray-400 mr-3"></i> ${assignment.name || '-'}
-                        </td>
-                        <td class="px-6 py-3 text-center">
-                            <span class="px-3 py-1 text-xs font-bold rounded-full ${statusClass}">${statusText}</span>
-                        </td>`;
-                     studentDetailBody.appendChild(row);
-                });
-            }
-
-            // --- Render Pending Assignments ---
-            if (pendingAssignments.length > 0) {
-                 hasContent = true;
-                const headerRow = document.createElement('tr');
-                headerRow.className = "bg-red-50 border-y";
-                headerRow.innerHTML = `<th colspan="3" class="px-6 py-2 text-left text-red-800 font-semibold"><i class="fas fa-times-circle mr-2"></i>งานที่ยังไม่ส่ง (${pendingAssignments.length} ชิ้น)</th>`;
-                studentDetailBody.appendChild(headerRow);
-
-                pendingAssignments.forEach((assignment) => {
-                     const originalIndex = classData.assignments.findIndex(a => a.id === assignment.id);
-                     const row = document.createElement('tr');
-                     row.className = 'border-b';
-                     row.innerHTML = `
-                        <td class="px-4 py-3 text-center text-gray-500">${originalIndex + 1}</td>
-                        <td class="px-6 py-3 assignment-name-cell" data-details="จำนวน: ${assignment.quantity || '-'} | หน้า: ${assignment.page || '-'} <br> มอบหมาย: ${assignment.assignedDate || '-'}">
-                            <i class="fas fa-book text-gray-400 mr-3"></i> ${assignment.name || '-'}
-                        </td>
-                        <td class="px-6 py-3 text-center">
-                            <span class="px-3 py-1 text-xs font-bold rounded-full status-none">-</span>
-                        </td>`;
-                     studentDetailBody.appendChild(row);
-                });
-            } else if (completedAssignments.length > 0) {
-                 const allDoneRow = document.createElement('tr');
-                 allDoneRow.innerHTML = `<td colspan="3" class="text-center p-4 text-green-600 font-semibold"><i class="fas fa-award mr-2"></i>ยอดเยี่ยม! ส่งงานครบทุกชิ้นแล้ว</td>`;
-                 studentDetailBody.appendChild(allDoneRow);
-            }
-
-            if (!hasContent && pendingAssignments.length === 0 && completedAssignments.length === 0) {
-                 studentDetailBody.innerHTML = '<tr><td colspan="3" class="text-center p-8 text-gray-500">ไม่พบรายการงานหรือคะแนนของนักเรียนคนนี้</td></tr>';
-            }
-
-            // Attach tooltip event listeners after rendering all rows
-            studentDetailBody.querySelectorAll('.assignment-name-cell').forEach(cell => {
-                cell.addEventListener('mouseenter', showAssignmentTooltip);
-                cell.addEventListener('mouseleave', hideAssignmentTooltip);
-                cell.addEventListener('mousemove', moveAssignmentTooltip);
-            });
-        };
-
-        // Start the app
-        setupFirestoreListener();
-    });
-</script>
+<script type="module" src="script.min.js"></script>
 
 </body>
 </html>
-
