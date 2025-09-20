@@ -401,6 +401,33 @@
             studentDetailTable.querySelector('thead').innerHTML = ''; // Clear header
             let hasContent = false;
 
+            // --- Render Overall Score Summary ---
+            const scores = calculateScores(selectedStudentId, classData);
+            const summaryHeaderRow = document.createElement('tr');
+            summaryHeaderRow.className = 'border-b';
+            const totalScoreColor = scores.totalScore < 50 ? 'text-red-600' : 'text-green-600';
+            const gpaIsZero = scores.gpa === '0.0';
+            const gpaColor = gpaIsZero ? 'text-red-600' : 'text-purple-600';
+            summaryHeaderRow.innerHTML = `
+                <td colspan="3" class="p-0">
+                    <div class="grid grid-cols-2 gap-px bg-gray-200">
+                        <div class="bg-white p-4 text-center">
+                            <p class="text-sm font-semibold text-gray-600">คะแนนรวม</p>
+                            <p class="text-3xl font-bold ${totalScoreColor}">${scores.totalScore}</p>
+                        </div>
+                        <div class="bg-white p-4 text-center">
+                            <p class="text-sm font-semibold text-gray-600">ผลการเรียน</p>
+                            <p class="text-3xl font-bold ${gpaColor}">${scores.gpa}</p>
+                        </div>
+                    </div>
+                </td>
+            `;
+            studentDetailBody.appendChild(summaryHeaderRow);
+            const separatorRow = document.createElement('tr');
+            separatorRow.innerHTML = `<td colspan="3" class="py-2 bg-gray-100"></td>`;
+            studentDetailBody.appendChild(separatorRow);
+
+
             // --- Render Exam and other scores FIRST ---
             const studentExams = classData.examScores?.[selectedStudentId] || {};
             const examTypes = { midterm: 'คะแนนสอบกลางภาค', final: 'คะแนนสอบปลายภาค', midYear: 'คะแนนสอบกลางปี', yearEnd: 'คะแนนสอบปลายปี', special: 'คะแนนพิเศษ (การสอบ)' };
@@ -535,8 +562,8 @@
                  studentDetailBody.appendChild(allDoneRow);
             }
 
-            if (!hasContent) {
-                studentDetailBody.innerHTML = '<tr><td colspan="3" class="text-center p-8 text-gray-500">ไม่พบรายการงานหรือคะแนนของนักเรียนคนนี้</td></tr>';
+            if (!hasContent && pendingAssignments.length === 0 && completedAssignments.length === 0) {
+                 studentDetailBody.innerHTML = '<tr><td colspan="3" class="text-center p-8 text-gray-500">ไม่พบรายการงานหรือคะแนนของนักเรียนคนนี้</td></tr>';
             }
 
             // Attach tooltip event listeners after rendering all rows
